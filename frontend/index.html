@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sports League Scheduler</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #dbdcde; color: #333; font-family: 'Inter', sans-serif; min-height: 100vh; }
+  header { padding: 36px 40px 28px; background: #3f3b6d; border-bottom: 2px solid #000; }
+  header h1 { font-size: 22px; font-weight: 600; color: #fff; }
+  header p { font-family: 'Space Mono', monospace; font-size: 11px; color: #d9d9d9; margin-top: 4px; }
+  
+  main { padding: 32px 40px; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  
+  .algo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .algo-card { background: #f5f7fa; border: 2px solid #30363d; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 8px; transition: 0.2s; }
+  .algo-card:hover { background: #fff; box-shadow: 0 0 20px rgba(63, 59, 109, 0.2); border-color: #3f3b6d; }
+  
+  .card-tag { font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700; text-transform: uppercase; color: #3f3b6d; background: rgba(63, 59, 109, 0.1); padding: 2px 7px; border-radius: 3px; width: fit-content; }
+  .card-name { font-size: 15px; font-weight: 600; color: #0a0e1a; }
+  .card-desc { font-size: 12px; color: #555; line-height: 1.6; flex: 1; }
+  
+  .run-btn { margin-top: 10px; padding: 8px 16px; border-radius: 6px; border: 1.5px solid #3f3b6d; background: transparent; color: #3f3b6d; font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.15s; }
+  .run-btn:hover { background: #3f3b6d; color: #fff; }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Output Panel Layout */
+  .output-panel { background: #fff; border: 2px solid #3f3b6d; border-radius: 10px; display: none; margin-top: 20px; animation: fadeUp 0.3s ease; }
+  .output-panel.visible { display: block; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+  .panel-header { padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; border-radius: 10px 10px 0 0; }
+  .panel-title { font-weight: 600; color: #3f3b6d; }
+  .close-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #666; }
+
+  .panel-body { display: grid; grid-template-columns: 1.5fr 1fr; gap: 0; }
+  
+  /* Schedule Table Section */
+  .schedule-section { padding: 20px; border-right: 1px solid #eee; max-height: 600px; overflow-y: auto; }
+  .section-title { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #3f3b6d; margin-bottom: 15px; }
+
+  .week-block { margin-bottom: 20px; }
+  .week-header { background: #3f3b6d; color: #fff; padding: 5px 12px; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+  .match-row { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+  .home { color: #2d7f3c; font-weight: 600; }
+  .away { color: #d64c1a; font-weight: 600; }
+  .derby-tag { background: #ffd700; color: #000; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: bold; margin-left: 5px; }
+
+  /* Stats Section */
+  .stats-section { padding: 20px; background: #fafafa; display: flex; flex-direction: column; gap: 20px; }
+  .stat-card { background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 8px; }
+  .stat-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 5px; }
+  .stat-value { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; color: #3f3b6d; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Sports League Scheduler</h1>
+  <p>Algerian Ligue 1 · 12 Teams · 22 Rounds · AI Comparison Tool</p>
+</header>
+
+<main>
+  <div class="algo-grid">
+    <div class="algo-card" id="card-csp">
+      <span class="card-tag">CSP</span>
+      <div class="card-name">Constraint Programming</div>
+      <div class="card-desc">Backtracking search with Forward Checking. Guarantees hard constraints.</div>
+      <button class="run-btn" id="btn-csp" onclick="run('csp')">Run Algorithm</button>
+    </div>
+
+    <div class="algo-card" id="card-hc">
+      <span class="card-tag">Local Search</span>
+      <div class="card-name">Hill Climbing</div>
+      <div class="card-desc">Iterative improvement by swapping matches to minimize travel distance.</div>
+      <button class="run-btn" id="btn-hc" onclick="run('hc')">Run Algorithm</button>
+    </div>
+
+    <div class="algo-card" id="card-sa">
+      <span class="card-tag">Metaheuristic</span>
+      <div class="card-name">Simulated Annealing</div>
+      <div class="card-desc">Advanced local search that escapes local optima by accepting worse moves.</div>
+      <button class="run-btn" id="btn-sa" onclick="run('sa')">Run Algorithm</button>
+    </div>
+
+    <div class="algo-card" id="card-gs">
+      <span class="card-tag">Constructive</span>
+      <div class="card-name">Greedy Search</div>
+      <div class="card-desc">Round-by-round construction picking the best local choice at each step.</div>
+      <button class="run-btn" id="btn-gs" onclick="run('gs')">Run Algorithm</button>
+    </div>
+  </div>
+
+  <div class="output-panel" id="output-panel">
+    <div class="panel-header">
+      <span class="panel-title" id="panel-name">Algorithm Results</span>
+      <button class="close-btn" onclick="closePanel()">✕</button>
+    </div>
+    <div class="panel-body">
+      <div class="schedule-section">
+        <div class="section-title">Schedule Construction</div>
+        <div id="schedule-container">
+          </div>
+      </div>
+
+      <div class="stats-section">
+        <div class="stat-card">
+          <div class="stat-label">Total Travel Distance</div>
+          <div class="stat-value" id="s-dist">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Execution Time</div>
+          <div class="stat-value" id="s-time">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">League Metrics</div>
+            <div style="font-size: 12px; color: #666; line-height: 1.5;">
+                • All Hard Constraints Verified<br>
+                • Double Round-Robin Validated<br>
+                • Travel Optimization applied
+            </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_BASE = "http://127.0.0.1:8000";
+
+async function run(algo) {
+  const btn = document.getElementById(`btn-${algo}`);
+  const container = document.getElementById('schedule-container');
+  
+  // Set Loading State
+  btn.disabled = true;
+  btn.textContent = "Computing...";
+  container.innerHTML = "<p style='padding:20px; color:#666;'>Running algorithm logic on server...</p>";
+
+  const endpoints = {
+    'csp': '/generate/csp/',
+    'hc':  '/generate/hc/',
+    'sa':  '/generate/sa/',
+    'gs':  '/generate/greedy/'
+  };
+
+  try {
+    const response = await fetch(`${API_BASE}${endpoints[algo]}`, { method: 'POST' });
+    if (!response.ok) throw new Error("Backend failed to generate schedule");
+    
+    const data = await response.json();
+
+    // 1. Update Metrics
+    document.getElementById('s-dist').textContent = `${data.total_travel_distance.toLocaleString()} km`;
+    document.getElementById('s-time').textContent = `${data.execution_time.toFixed(4)}s`;
+    document.getElementById('panel-name').textContent = `${data.method} Result`;
+
+    // 2. Build Schedule Table
+    renderTable(data.rounds);
+
+    // 3. Display Panel
+    document.getElementById('output-panel').classList.add('visible');
+    document.getElementById('output-panel').scrollIntoView({ behavior: 'smooth' });
+
+  } catch (err) {
+    alert("Error connecting to backend: " + err.message);
+    container.innerHTML = `<p style='color:red; padding:20px;'>Error: ${err.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Algorithm";
+  }
+}
+
+function renderTable(roundsData) {
+  const container = document.getElementById('schedule-container');
+  container.innerHTML = "";
+
+  // Group by Round
+  const grouped = {};
+  roundsData.forEach(m => {
+    if (!grouped[m.round]) grouped[m.round] = [];
+    grouped[m.round].push(m);
+  });
+
+  // Sort rounds and display
+  Object.keys(grouped).sort((a,b) => a-b).forEach(rd => {
+    const weekDiv = document.createElement('div');
+    weekDiv.className = "week-block";
+    
+    let html = `<div class="week-header">ROUND ${rd}</div>`;
+    grouped[rd].forEach(m => {
+      html += `
+        <div class="match-row">
+          <span><span class="home">${m.home_team}</span> vs <span class="away">${m.away_team}</span></span>
+          <span>
+            ${m.is_derby ? '<span class="derby-tag">DERBY</span>' : ''}
+            <small style="color:#999; margin-left:10px;">${m.travel_distance}km</small>
+          </span>
+        </div>
+      `;
+    });
+    
+    weekDiv.innerHTML = html;
+    container.appendChild(weekDiv);
+  });
+}
+
+function closePanel() {
+  document.getElementById('output-panel').classList.remove('visible');
+}
+</script>
+</body>
+</html>

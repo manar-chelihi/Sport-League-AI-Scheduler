@@ -1,0 +1,20 @@
+team1_id,team2_id,match_type,priority
+1,2,Derby,High
+1,3,Derby,High
+2,3,Derby,High
+4,5,Classic,Medium
+5,6,Classic,Medium
+7,8,Regional,Medium
+1,9,Local,Medium
+3,9,Local,Medium
+
+7,16,Derby,High
+7,17,Regional,High
+16,17,Regional,Medium
+15,18,Regional,Medium
+11,15,Eastern Derby,High
+6,18,Regional,Medium
+4,14,Kabylie Derby,High
+8,13,Western Regional,Medium
+13,17,Western Derby,Medium
+5,15,Eastern Clash,Medium
