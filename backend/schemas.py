@@ -1,61 +1,148 @@
-from pydantic import BaseModel
-from typing import List
+# schemas.py
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
 
-class Team(BaseModel):
-    id: int
-    name: str
-    strength: int
-    
-    class Config:
-        from_attributes = True
 
-class Distance(BaseModel):
+# ---------- Base schemas (used for reading/writing) ----------
+
+class TeamBase(BaseModel):
+    team_name: str
+    latitude: float
+    longitude: float
+
+class TeamCreate(TeamBase):
+    pass
+
+class Team(TeamBase):
+    team_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DistanceBase(BaseModel):
     team1_id: int
     team2_id: int
     distance_km: float
-    
-    class Config:
-        from_attributes = True
 
-class Derby(BaseModel):
-    id: int
+class DistanceCreate(DistanceBase):
+    pass
+
+class Distance(DistanceBase):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DerbyBase(BaseModel):
     team1_id: int
     team2_id: int
-    match_type: str
-    priority: str
-    
-    class Config:
-        from_attributes = True
+    priority: str  # 'High', 'Medium', 'Low'
 
-class ScheduledMatch(BaseModel):
-    id: int
+class DerbyCreate(DerbyBase):
+    pass
+
+class Derby(DerbyBase):
+    derby_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BlackoutRoundBase(BaseModel):
+    round_number: int
+    description: Optional[str] = None
+
+class BlackoutRoundCreate(BlackoutRoundBase):
+    pass
+
+class BlackoutRound(BlackoutRoundBase):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SolverRunBase(BaseModel):
+    solver_type: str
+    parameters: Optional[Dict[str, Any]] = None
+    blackout_rounds_used: Optional[List[int]] = None
+    hard_constraints_ok: bool = False
+    execution_time_sec: Optional[float] = None
+
+class SolverRunCreate(SolverRunBase):
+    pass
+
+class SolverRun(SolverRunBase):
     run_id: int
-    round_num: int
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ScheduleMatchBase(BaseModel):
+    round_number: int
+    match_index: Optional[int] = None
     home_team_id: int
     away_team_id: int
-    
-    class Config:
-        from_attributes = True
+    is_derby: bool = False
+    distance_km: float
+    play_day: Optional[int] = None
+    weekday: Optional[int] = Field(None, ge=1, le=7)
 
-class AlgorithmRun(BaseModel):
-    id: int
-    algo_name: str
-    total_distance: float
-    execution_time: float
-    matches: List[ScheduledMatch] = []
-    
-    class Config:
-        from_attributes = True
+class ScheduleMatchCreate(ScheduleMatchBase):
+    pass
 
-class MatchResponse(BaseModel):
-    round: int
-    home_team: str
-    away_team: str
-    is_derby: bool
-    travel_distance: float
+class ScheduleMatch(ScheduleMatchBase):
+    match_id: int
+    run_id: int
+    model_config = ConfigDict(from_attributes=True)
 
-class ScheduleResponse(BaseModel):
-    method: str
-    total_travel_distance: float
-    execution_time: float
-    rounds: List[MatchResponse]
+
+class RunMetricBase(BaseModel):
+    total_travel_km: Optional[float] = None
+    rest_imbalance: Optional[float] = None
+    away_break_violations: Optional[int] = None
+    derby_blackout_violations: Optional[int] = None
+    objective_cost: Optional[float] = None
+
+class RunMetricCreate(RunMetricBase):
+    run_id: int
+
+class RunMetric(RunMetricBase):
+    run_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SearchStatBase(BaseModel):
+    iterations_performed: Optional[int] = None
+    explored_neighbors: Optional[int] = None
+    accepted_moves: Optional[int] = None
+    rejected_moves: Optional[int] = None
+    improving_moves: Optional[int] = None
+    backtrack_calls: Optional[int] = None
+    constraint_checks: Optional[int] = None
+    forward_check_failures: Optional[int] = None
+
+class SearchStatCreate(SearchStatBase):
+    run_id: int
+
+class SearchStat(SearchStatBase):
+    run_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CostHistoryBase(BaseModel):
+    iteration: int
+    best_cost: Optional[float] = None
+    current_cost: Optional[float] = None
+
+class CostHistoryCreate(CostHistoryBase):
+    run_id: int
+
+class CostHistory(CostHistoryBase):
+    history_id: int
+    run_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Composite response schemas (for API convenience) ----------
+
+class FullSolverResult(BaseModel):
+    run: SolverRun
+    matches: List[ScheduleMatch]
+    metrics: Optional[RunMetric] = None
+    search_stats: Optional[SearchStat] = None
+    cost_history: List[CostHistory] = []

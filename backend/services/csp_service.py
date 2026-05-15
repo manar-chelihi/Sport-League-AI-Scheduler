@@ -1,196 +1,750 @@
 # services/csp_service.py
-import pandas as pd
-import copy
-import time
-import sys
-from itertools import combinations
 
-# Increase recursion depth for CSP backtracking with large leagues
+import copy
+import sys
+import time
+from itertools import combinations
+from typing import Dict, List, Tuple, Set, Optional
+
+import pandas as pd
+
+
+# Increase recursion limit for deep CSP search trees
 sys.setrecursionlimit(100000)
 
-class CSPScheduler:
-    def __init__(self, teams_df: pd.DataFrame, distances_df: pd.DataFrame, derbies_df: pd.DataFrame):
-        """
-        Initializes the CSP Solver with data from the database/CSVs.
-        """
-        # 1. Data Frames
-        self.teams_df = teams_df
-        self.distances_df = distances_df
-        self.derbies_df = derbies_df
 
-        # 2. Basic Mappings and Stats
-        self.teams_list = list(self.teams_df['team_name'])
+class CSPScheduler:
+    """
+    Enhanced CSP-based Sports League Scheduler.
+
+    Features:
+    ----------
+    - Backtracking CSP solver
+    - MRV heuristic
+    - Forward checking
+    - Hard constraint verification
+    - Derby preference handling
+    - Consecutive away-game control
+    - Rest fairness metrics
+    - Distance optimization metrics
+    - Configurable blackout rounds
+    - Detailed schedule output
+    - Search statistics
+    """
+
+    def __init__(
+        self,
+        teams_df: pd.DataFrame,
+        distances_df: pd.DataFrame,
+        derbies_df: pd.DataFrame,
+        blackout_rounds: Optional[Set[int]] = None,
+    ):
+        self.teams_df = teams_df.copy()
+        self.distances_df = distances_df.copy()
+        self.derbies_df = derbies_df.copy()
+
+        # Teams
+        self.teams_list = list(self.teams_df["team_name"])
+
         self.num_teams = len(self.teams_list)
+
+        if self.num_teams % 2 != 0:
+            raise ValueError(
+                "Number of teams must be even."
+            )
+
         self.num_rounds = 2 * (self.num_teams - 1)
-        
-        # Mappings for DB compatibility (Name <-> ID)
-        self.name_to_id = dict(zip(self.teams_df['team_name'], self.teams_df['team_id']))
-        self.id_to_name = dict(zip(self.teams_df['team_id'], self.teams_df['team_name']))
-        
-        # 3. Lookups for logic
+
+        # ID mappings
+        self.name_to_id = dict(
+            zip(
+                self.teams_df["team_name"],
+                self.teams_df["team_id"]
+            )
+        )
+
+        self.id_to_name = dict(
+            zip(
+                self.teams_df["team_id"],
+                self.teams_df["team_name"]
+            )
+        )
+
+        # Distances
         self.dist_lookup = self._build_distance_lookup()
-        self.derby_matches, self.derby_prefs = self._build_derby_info()
-        
-        # 4. State
+
+        # Derby info
+        (
+            self.derby_matches,
+            self.derby_preferences
+        ) = self._build_derby_info()
+
+        # Blackout rounds
+        if blackout_rounds is None:
+            self.blackout_rounds = {
+                1,
+                2,
+                self.num_rounds,
+            }
+        else:
+            self.blackout_rounds = blackout_rounds
+
+        # Search stats
         self.backtrack_calls = 0
+        self.constraint_checks = 0
+        self.forward_check_failures = 0
+
+    # ============================================================
+    # DISTANCE LOOKUP
+    # ============================================================
 
     def _build_distance_lookup(self):
-        """Creates a (TeamA, TeamB) -> Distance mapping."""
-        dist = {}
+        """
+        Creates:
+            (TeamA, TeamB) -> distance_km
+        """
+
+        lookup = {}
+
         for _, row in self.distances_df.iterrows():
-            # Handle both name or ID based logic
-            t1 = self.id_to_name.get(row['team1_id'], row['team1_id'])
-            t2 = self.id_to_name.get(row['team2_id'], row['team2_id'])
-            dist[(t1, t2)] = row['distance_km']
-            dist[(t2, t1)] = row['distance_km']
-        return dist
+
+            t1 = self.id_to_name.get(
+                row["team1_id"],
+                row["team1_id"]
+            )
+
+            t2 = self.id_to_name.get(
+                row["team2_id"],
+                row["team2_id"]
+            )
+
+            d = float(row["distance_km"])
+
+            lookup[(t1, t2)] = d
+            lookup[(t2, t1)] = d
+
+        return lookup
+
+    # ============================================================
+    # DERBY PROCESSING
+    # ============================================================
 
     def _build_derby_info(self):
-        """Builds sets for derby detection and preferred rounds from notebook logic."""
-        derbies = []
-        prefs = {}
-        for _, row in self.derbies_df.iterrows():
-            t1 = self.id_to_name.get(row['team1_id'], row['team1_id'])
-            t2 = self.id_to_name.get(row['team2_id'], row['team2_id'])
-            derbies.extend([(t1, t2), (t2, t1)])
-            
-            # Logic from Notebook: High priority on rounds 11/22, others on 5-17
-            rounds = [11, 22] if row['priority'] == 'High' else list(range(5, 18))
-            prefs[(t1, t2)] = rounds
-            prefs[(t2, t1)] = rounds
-        return set(derbies), prefs
+        """
+        Build derby structures and preferred rounds.
+        """
 
-    def _is_consistent(self, assignment, match, round_num):
+        derby_matches = set()
+        derby_preferences = {}
+
+        for _, row in self.derbies_df.iterrows():
+
+            t1 = self.id_to_name.get(
+                row["team1_id"],
+                row["team1_id"]
+            )
+
+            t2 = self.id_to_name.get(
+                row["team2_id"],
+                row["team2_id"]
+            )
+
+            derby_matches.add((t1, t2))
+            derby_matches.add((t2, t1))
+
+            priority = str(
+                row.get("priority", "Medium")
+            ).lower()
+
+            if priority == "high":
+                preferred_rounds = [
+                    self.num_rounds // 2,
+                    self.num_rounds,
+                ]
+
+            elif priority == "medium":
+                preferred_rounds = list(
+                    range(5, 18)
+                )
+
+            else:
+                preferred_rounds = list(
+                    range(3, self.num_rounds)
+                )
+
+            derby_preferences[(t1, t2)] = preferred_rounds
+            derby_preferences[(t2, t1)] = preferred_rounds
+
+        return derby_matches, derby_preferences
+
+    # ============================================================
+    # HARD CONSTRAINTS
+    # ============================================================
+
+    def _is_consistent(
+        self,
+        assignment,
+        match,
+        round_num,
+    ):
         """
-        Hard Constraint Check (Cell 45):
-        - C1: Each team plays at most once per round.
-        - C2: Reverse fixture must be in a different round.
+        HARD CONSTRAINTS
+
+        C1:
+            Each team plays at most once per round.
+
+        C2:
+            Reverse fixture cannot occur
+            in the same round.
+
+        C3:
+            A fixture appears only once.
+
+        C4:
+            No self-play.
         """
+
+        self.constraint_checks += 1
+
         home, away = match
-        for (h, a), r in assignment.items():
-            if r == round_num:
-                if h in (home, away) or a in (home, away):
-                    return False
-        
-        reverse = (away, home)
-        if reverse in assignment and assignment[reverse] == round_num:
+
+        # C4
+        if home == away:
             return False
+
+        # C1
+        for (h, a), r in assignment.items():
+
+            if r != round_num:
+                continue
+
+            if h in (home, away):
+                return False
+
+            if a in (home, away):
+                return False
+
+        # C2
+        reverse = (away, home)
+
+        if reverse in assignment:
+            if assignment[reverse] == round_num:
+                return False
+
+        # C3
+        if match in assignment:
+            return False
+
         return True
 
-    def _select_mrv_variable(self, variables, assignment, domains):
-        """MRV Heuristic: Pick match with the fewest remaining legal rounds."""
-        unassigned = [v for v in variables if v not in assignment]
+    # ============================================================
+    # MRV HEURISTIC
+    # ============================================================
+
+    def _select_mrv_variable(
+        self,
+        variables,
+        assignment,
+        domains,
+    ):
+        """
+        Minimum Remaining Values heuristic.
+        """
+
+        unassigned = [
+            v for v in variables
+            if v not in assignment
+        ]
+
         if not unassigned:
             return None
-        return min(unassigned, key=lambda v: len(domains[v]))
 
-    def _forward_check(self, variables, domains, assignment, match, round_num):
-        """Prunes domains of related variables to speed up search."""
+        return min(
+            unassigned,
+            key=lambda v: len(domains[v])
+        )
+
+    # ============================================================
+    # FORWARD CHECKING
+    # ============================================================
+
+    def _forward_check(
+        self,
+        variables,
+        domains,
+        assignment,
+        match,
+        round_num,
+    ):
+        """
+        Forward checking:
+        Remove invalid rounds from neighbors.
+        """
+
         new_domains = copy.deepcopy(domains)
+
         home, away = match
+
         for var in variables:
+
             if var in assignment:
                 continue
+
             vh, va = var
-            # Remove this round from any match involving these two teams
-            if vh in (home, away) or va in (home, away) or var == (away, home):
+
+            related = (
+                vh in (home, away)
+                or va in (home, away)
+                or var == (away, home)
+            )
+
+            if related:
+
                 if round_num in new_domains[var]:
                     new_domains[var].remove(round_num)
-                    if not new_domains[var]:
-                        return None # Domain empty: Failure
+
+                if not new_domains[var]:
+                    self.forward_check_failures += 1
+                    return None
+
         return new_domains
 
-    def _backtrack(self, variables, assignment, domains):
-        """Recursive backtracking solver."""
+    # ============================================================
+    # BACKTRACKING SEARCH
+    # ============================================================
+
+    def _backtrack(
+        self,
+        variables,
+        assignment,
+        domains,
+    ):
+        """
+        Recursive CSP solver.
+        """
+
         self.backtrack_calls += 1
-        
+
+        # Complete assignment
         if len(assignment) == len(variables):
             return assignment
 
-        var = self._select_mrv_variable(variables, assignment, domains)
-        if var is None: return None
+        # MRV
+        var = self._select_mrv_variable(
+            variables,
+            assignment,
+            domains,
+        )
 
-        # Try rounds in order
-        for round_num in domains[var]:
-            if self._is_consistent(assignment, var, round_num):
+        if var is None:
+            return assignment
+
+        # Least constraining order
+        ordered_rounds = sorted(domains[var])
+
+        for round_num in ordered_rounds:
+
+            if self._is_consistent(
+                assignment,
+                var,
+                round_num,
+            ):
+
                 assignment[var] = round_num
-                
-                new_doms = self._forward_check(variables, domains, assignment, var, round_num)
-                if new_doms is not None:
-                    result = self._backtrack(variables, assignment, new_doms)
+
+                new_domains = self._forward_check(
+                    variables,
+                    domains,
+                    assignment,
+                    var,
+                    round_num,
+                )
+
+                if new_domains is not None:
+
+                    result = self._backtrack(
+                        variables,
+                        assignment,
+                        new_domains,
+                    )
+
                     if result is not None:
                         return result
-                
+
                 del assignment[var]
+
         return None
 
-    def _calculate_metrics(self, assignment):
-        """Calculates Total Travel Distance and Soft Penalty Score (Cell 47 & 49)."""
-        travel = 0
-        penalty = 0
-        
-        # 1. Travel Distance (Sum of away team trips)
+    # ============================================================
+    # HARD VALIDATION
+    # ============================================================
+
+    def verify_constraints(self, assignment):
+        """
+        Validate full schedule integrity.
+        """
+
+        violations = []
+
+        rounds = {}
+
+        for match, r in assignment.items():
+            rounds.setdefault(r, []).append(match)
+
+        # Per round validation
+        for r, matches in rounds.items():
+
+            teams_seen = set()
+
+            for home, away in matches:
+
+                if home == away:
+                    violations.append(
+                        f"Self-play in round {r}"
+                    )
+
+                if home in teams_seen:
+                    violations.append(
+                        f"{home} duplicated in round {r}"
+                    )
+
+                if away in teams_seen:
+                    violations.append(
+                        f"{away} duplicated in round {r}"
+                    )
+
+                teams_seen.add(home)
+                teams_seen.add(away)
+
+        # Reverse fixtures
+        for home, away in assignment:
+
+            reverse = (away, home)
+
+            if reverse not in assignment:
+                violations.append(
+                    f"Missing reverse fixture for "
+                    f"{home} vs {away}"
+                )
+
+        return violations
+
+    # ============================================================
+    # METRICS
+    # ============================================================
+
+    def _calculate_travel_distance(
+        self,
+        assignment,
+    ):
+        """
+        Sum away-team travel.
+        """
+
+        total = 0.0
+
         for (home, away), _ in assignment.items():
-            d = self.dist_lookup.get((home, away), 0)
-            travel += 2 * d
-            
-        # 2. Penalty: Consecutive Away Games (>2)
+
+            d = self.dist_lookup.get(
+                (home, away),
+                0
+            )
+
+            total += 2 * d
+
+        return total
+
+    def _calculate_away_penalty(
+        self,
+        assignment,
+    ):
+        """
+        Penalize >2 consecutive away games.
+        """
+
+        penalty = 0
+
         away_by_team = {}
+
         for (home, away), r in assignment.items():
-            away_by_team.setdefault(away, []).append(r)
+            away_by_team.setdefault(
+                away,
+                []
+            ).append(r)
 
-        for team, away_rounds in away_by_team.items():
-            sorted_r = sorted(away_rounds)
-            consec = 1
-            for i in range(1, len(sorted_r)):
-                if sorted_r[i] == sorted_r[i-1] + 1:
-                    consec += 1
-                    if consec > 2: penalty += 10
+        for team, rounds in away_by_team.items():
+
+            rounds = sorted(rounds)
+
+            streak = 1
+
+            for i in range(1, len(rounds)):
+
+                if rounds[i] == rounds[i - 1] + 1:
+
+                    streak += 1
+
+                    if streak > 2:
+                        penalty += 10
+
                 else:
-                    consec = 1
+                    streak = 1
 
-        # 3. Penalty: Derby timing
-        for match, preferred in self.derby_prefs.items():
-            r = assignment.get(match)
-            if r is not None and r not in preferred:
+        return penalty
+
+    def _calculate_derby_penalty(
+        self,
+        assignment,
+    ):
+        """
+        Penalize derbies outside preferred rounds.
+        """
+
+        penalty = 0
+
+        for match, preferred_rounds in (
+            self.derby_preferences.items()
+        ):
+
+            assigned_round = assignment.get(match)
+
+            if assigned_round is None:
+                continue
+
+            if assigned_round not in preferred_rounds:
                 penalty += 5
 
-        return travel, penalty
+            if assigned_round in self.blackout_rounds:
+                penalty += 20
+
+        return penalty
+
+    def _calculate_rest_imbalance(
+        self,
+        assignment,
+    ):
+        """
+        Rest fairness metric.
+        """
+
+        matches_by_round = {}
+
+        for match, r in assignment.items():
+            matches_by_round.setdefault(
+                r,
+                []
+            ).append(match)
+
+        last_played = {
+            t: 0 for t in self.teams_list
+        }
+
+        imbalance = 0
+
+        for r in sorted(matches_by_round.keys()):
+
+            for home, away in matches_by_round[r]:
+
+                home_rest = r - last_played[home]
+                away_rest = r - last_played[away]
+
+                imbalance += abs(
+                    home_rest - away_rest
+                )
+
+                last_played[home] = r
+                last_played[away] = r
+
+        return imbalance
+
+    def calculate_metrics(
+        self,
+        assignment,
+    ):
+        """
+        Full metrics report.
+        """
+
+        travel = self._calculate_travel_distance(
+            assignment
+        )
+
+        away_penalty = self._calculate_away_penalty(
+            assignment
+        )
+
+        derby_penalty = self._calculate_derby_penalty(
+            assignment
+        )
+
+        rest_imbalance = (
+            self._calculate_rest_imbalance(
+                assignment
+            )
+        )
+
+        objective = (
+            travel
+            + away_penalty
+            + derby_penalty
+            + rest_imbalance
+        )
+
+        return {
+            "travel_distance_km": travel,
+            "away_penalty_violations": away_penalty,
+            "derby_penalty": derby_penalty,
+            "rest_imbalance": rest_imbalance,
+            "objective_score": objective,
+        }
+
+    # ============================================================
+    # SCHEDULE FORMATTER
+    # ============================================================
+
+    def _format_results(
+        self,
+        assignment,
+    ):
+        """
+        Transform assignment to API-friendly structure.
+        """
+
+        formatted = []
+
+        for (home, away), round_num in assignment.items():
+
+            distance = self.dist_lookup.get(
+                (home, away),
+                0
+            )
+
+            formatted.append({
+                "round": int(round_num),
+
+                "home_id":
+                    int(self.name_to_id[home]),
+
+                "home_name":
+                    home,
+
+                "away_id":
+                    int(self.name_to_id[away]),
+
+                "away_name":
+                    away,
+
+                "is_derby":
+                    (home, away)
+                    in self.derby_matches,
+
+                "distance_km":
+                    float(distance),
+            })
+
+        formatted.sort(
+            key=lambda x: (
+                x["round"],
+                x["home_name"]
+            )
+        )
+
+        return formatted
+
+    # ============================================================
+    # MAIN SOLVER
+    # ============================================================
 
     def solve(self):
         """
-        Main interface: Generates the schedule.
-        Returns: (formatted_matches, total_distance, penalty_score)
+        Main public interface.
         """
-        # Initialize Variables (All ordered pairs)
+
+        # Variables:
+        # every directed fixture
         variables = []
-        for a, b in combinations(self.teams_list, 2):
-            variables.extend([(a, b), (b, a)])
-        
-        # Initialize Domains (1 to 22)
-        domains = {v: list(range(1, self.num_rounds + 1)) for v in variables}
-        
+
+        for a, b in combinations(
+            self.teams_list,
+            2
+        ):
+
+            variables.append((a, b))
+            variables.append((b, a))
+
+        # Domains:
+        # all rounds
+        domains = {
+            v: list(
+                range(
+                    1,
+                    self.num_rounds + 1
+                )
+            )
+            for v in variables
+        }
+
         start_time = time.time()
-        solution = self._backtrack(variables, {}, domains)
-        elapsed = time.time() - start_time
+
+        solution = self._backtrack(
+            variables,
+            {},
+            domains,
+        )
+
+        execution_time = (
+            time.time() - start_time
+        )
 
         if solution is None:
-            return None, 0, 0
 
-        # Transform to DB Structure
-        formatted_results = []
-        for (home, away), r in solution.items():
-            formatted_results.append({
-                "round": r,
-                "home_id": self.name_to_id[home],
-                "away_id": self.name_to_id[away],
-                "is_derby": (home, away) in self.derby_matches
-            })
+            return {
+                "success": False,
+                "schedule": [],
+                "metrics": {},
+                "violations": [
+                    "No feasible solution found."
+                ],
+            }
 
-        # Sort matches by round
-        formatted_results.sort(key=lambda x: x['round'])
-        
-        dist, penalty = self._calculate_metrics(solution)
-        
-        print(f"CSP Finished: {self.backtrack_calls} calls, {elapsed:.2f}s")
-        return formatted_results, dist, penalty
+        violations = self.verify_constraints(
+            solution
+        )
+
+        metrics = self.calculate_metrics(
+            solution
+        )
+
+        formatted_results = self._format_results(
+            solution
+        )
+
+        return {
+            "success": True,
+
+            "schedule": formatted_results,
+
+            "metrics": metrics,
+
+            "constraint_report": {
+                "valid":
+                    len(violations) == 0,
+
+                "violations":
+                    violations,
+            },
+
+            "search_statistics": {
+                "backtrack_calls":
+                    self.backtrack_calls,
+
+                "constraint_checks":
+                    self.constraint_checks,
+
+                "forward_check_failures":
+                    self.forward_check_failures,
+
+                "execution_time_seconds":
+                    execution_time,
+            },
+        }

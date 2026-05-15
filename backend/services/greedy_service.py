@@ -1,85 +1,773 @@
 # services/greedy_service.py
-import pandas as pd
+
+import math
 import random
+import time
+
+import networkx as nx
+import pandas as pd
+
+from collections import defaultdict
+from itertools import combinations
+
 
 class GreedyScheduler:
-    def __init__(self, teams_df, distances_df, derbies_df):
-        self.teams_df = teams_df
-        self.distances_df = distances_df
-        self.derbies_df = derbies_df
-        
-        self.team_ids = list(self.teams_df['team_id'])
-        self.id_to_name = dict(zip(self.teams_df['team_id'], self.teams_df['team_name']))
+
+    def __init__(
+        self,
+        teams_df,
+        distances_df,
+        derbies_df,
+        blackout_rounds=None,
+    ):
+
+        self.teams_df = teams_df.copy()
+        self.distances_df = distances_df.copy()
+        self.derbies_df = derbies_df.copy()
+
+        # =====================================================
+        # TEAM DATA
+        # =====================================================
+
+        self.team_ids = sorted(
+            list(self.teams_df["team_id"])
+        )
+
         self.n = len(self.team_ids)
-        self.num_rounds = 2 * (self.n - 1)
 
-        self.dist_matrix = self._build_dist_lookup()
-        self.derbies = self._build_derby_lookup()
+        if self.n % 2 != 0:
+            raise ValueError(
+                "Number of teams must be even."
+            )
 
-    def _build_dist_lookup(self):
+        self.num_rounds = (
+            2 * (self.n - 1)
+        )
+
+        self.id_to_name = dict(
+            zip(
+                self.teams_df["team_id"],
+                self.teams_df["team_name"],
+            )
+        )
+
+        self.teams_info = {
+
+            row["team_id"]: {
+
+                "name":
+                    row["team_name"],
+
+                "coords":
+                    (
+                        row["latitude"],
+                        row["longitude"],
+                    ),
+            }
+
+            for _, row in (
+                self.teams_df.iterrows()
+            )
+        }
+
+        # =====================================================
+        # DISTANCES
+        # =====================================================
+
+        self.dist_matrix = (
+            self._build_distance_matrix()
+        )
+
+        # =====================================================
+        # DERBIES
+        # =====================================================
+
+        self.derbies_bonus = (
+            self._build_derby_bonus()
+        )
+
+        # =====================================================
+        # CONSTRAINTS
+        # =====================================================
+
+        self.blackout_rounds = (
+            blackout_rounds
+            if blackout_rounds
+            else {
+                1,
+                2,
+                self.num_rounds,
+            }
+        )
+
+        # =====================================================
+        # SEARCH STATS
+        # =====================================================
+
+        self.deadlock_count = 0
+
+        self.restart_count = 0
+
+        self.explored_matchings = 0
+
+        self.generated_neighbors = 0
+
+        self.constraint_violations = []
+
+        self.reset()
+
+    # =========================================================
+    # HAVERSINE DISTANCE
+    # =========================================================
+
+    def _haversine(
+        self,
+        coord1,
+        coord2,
+    ):
+
+        lat1, lon1 = coord1
+
+        lat2, lon2 = coord2
+
+        R = 6371
+
+        dlat = math.radians(
+            lat2 - lat1
+        )
+
+        dlon = math.radians(
+            lon2 - lon1
+        )
+
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(
+                math.radians(lat1)
+            )
+            * math.cos(
+                math.radians(lat2)
+            )
+            * math.sin(dlon / 2) ** 2
+        )
+
+        return (
+            2
+            * R
+            * math.asin(
+                math.sqrt(a)
+            )
+        )
+
+    # =========================================================
+    # DISTANCE MATRIX
+    # =========================================================
+
+    def _build_distance_matrix(self):
+
         dist = {}
-        for _, row in self.distances_df.iterrows():
-            dist[(row['team1_id'], row['team2_id'])] = row['distance_km']
-            dist[(row['team2_id'], row['team1_id'])] = row['distance_km']
+
+        for _, row in (
+            self.distances_df.iterrows()
+        ):
+
+            t1 = int(row["team1_id"])
+
+            t2 = int(row["team2_id"])
+
+            d = float(
+                row["distance_km"]
+            )
+
+            dist[(t1, t2)] = d
+
+            dist[(t2, t1)] = d
+
+        # Fill missing distances
+        for t1 in self.team_ids:
+
+            for t2 in self.team_ids:
+
+                if t1 == t2:
+
+                    dist[(t1, t2)] = 0
+
+                elif (t1, t2) not in dist:
+
+                    coord1 = self.teams_info[
+                        t1
+                    ]["coords"]
+
+                    coord2 = self.teams_info[
+                        t2
+                    ]["coords"]
+
+                    d = self._haversine(
+                        coord1,
+                        coord2,
+                    )
+
+                    dist[(t1, t2)] = d
+
+                    dist[(t2, t1)] = d
+
         return dist
 
-    def _build_derby_lookup(self):
-        derby_bonus = {}
-        for _, row in self.derbies_df.iterrows():
-            bonus = 1000 if row['priority'] == 'High' else 500
-            derby_bonus[(row['team1_id'], row['team2_id'])] = bonus
-            derby_bonus[(row['team2_id'], row['team1_id'])] = bonus
-        return derby_bonus
+    # =========================================================
+    # DERBY BONUS
+    # =========================================================
+
+    def _build_derby_bonus(self):
+
+        bonus = {}
+
+        for _, row in (
+            self.derbies_df.iterrows()
+        ):
+
+            t1 = int(row["team1_id"])
+
+            t2 = int(row["team2_id"])
+
+            pair = (
+                min(t1, t2),
+                max(t1, t2),
+            )
+
+            derby_bonus = (
+                1000
+                if row["priority"]
+                == "High"
+                else 500
+            )
+
+            bonus[pair] = derby_bonus
+
+        return bonus
+
+    # =========================================================
+    # RESET
+    # =========================================================
+
+    def reset(self):
+
+        self.current_locations = {
+
+            tid: tid
+            for tid in self.team_ids
+        }
+
+        self.played = defaultdict(int)
+
+        self.away_streak = {
+
+            tid: 0
+            for tid in self.team_ids
+        }
+
+        self.history = []
+
+    # =========================================================
+    # ROUND GENERATION
+    # =========================================================
+
+    def _generate_round(self):
+
+        G = nx.Graph()
+
+        G.add_nodes_from(
+            self.team_ids
+        )
+
+        for a, b in combinations(
+            self.team_ids,
+            2,
+        ):
+
+            pair = (
+                min(a, b),
+                max(a, b),
+            )
+
+            # =====================
+            # DOUBLE ROUND ROBIN
+            # =====================
+
+            if self.played[pair] >= 2:
+                continue
+
+            # =====================
+            # TRAVEL COST
+            # =====================
+
+            dist_a = (
+                self.dist_matrix[
+                    (
+                        self.current_locations[a],
+                        b,
+                    )
+                ]
+            )
+
+            dist_b = (
+                self.dist_matrix[
+                    (
+                        self.current_locations[b],
+                        a,
+                    )
+                ]
+            )
+
+            # =====================
+            # AWAY STREAK PENALTY
+            # =====================
+
+            p_a = (
+                25000
+                if self.away_streak[a]
+                >= 2
+                else 0
+            )
+
+            p_b = (
+                25000
+                if self.away_streak[b]
+                >= 2
+                else 0
+            )
+
+            # =====================
+            # DERBY BONUS
+            # =====================
+
+            derby_bonus = (
+                self.derbies_bonus.get(
+                    pair,
+                    0,
+                )
+            )
+
+            # =====================
+            # OBJECTIVE
+            # =====================
+
+            weight = (
+
+                derby_bonus
+
+                - (
+                    dist_a + dist_b
+                ) / 2
+
+                - p_a
+
+                - p_b
+
+            )
+
+            # randomness
+            weight += random.gauss(
+                0,
+                45,
+            )
+
+            G.add_edge(
+                a,
+                b,
+                weight=weight,
+            )
+
+        try:
+
+            matching = (
+                nx.max_weight_matching(
+                    G,
+                    weight="weight",
+                    maxcardinality=True,
+                )
+            )
+
+            self.explored_matchings += 1
+
+            return (
+                list(matching)
+                if len(matching)
+                == (self.n // 2)
+                else None
+            )
+
+        except Exception:
+
+            return None
+
+    # =========================================================
+    # HARD VALIDATION
+    # =========================================================
+
+    def _validate_round(
+        self,
+        matches,
+    ):
+
+        seen = set()
+
+        for a, b in matches:
+
+            if a == b:
+
+                self.constraint_violations.append(
+                    "Self-play detected."
+                )
+
+                return False
+
+            if a in seen:
+
+                self.constraint_violations.append(
+                    f"Duplicate team {a}."
+                )
+
+                return False
+
+            if b in seen:
+
+                self.constraint_violations.append(
+                    f"Duplicate team {b}."
+                )
+
+                return False
+
+            seen.add(a)
+
+            seen.add(b)
+
+        return True
+
+    # =========================================================
+    # FORMAT SCHEDULE
+    # =========================================================
+
+    def _format_schedule(self):
+
+        formatted = []
+
+        for idx, (
+            round_num,
+            away,
+            home,
+            dist,
+        ) in enumerate(
+            self.history
+        ):
+
+            formatted.append({
+
+                "round":
+                    round_num,
+
+                "match_index":
+                    idx + 1,
+
+                "home_id":
+                    int(home),
+
+                "away_id":
+                    int(away),
+
+                "home_name":
+                    self.id_to_name[home],
+
+                "away_name":
+                    self.id_to_name[away],
+
+                "is_derby":
+                    (
+                        min(home, away),
+                        max(home, away),
+                    )
+                    in self.derbies_bonus,
+
+                "distance_km":
+                    float(dist),
+            })
+
+        return formatted
+
+    # =========================================================
+    # METRICS
+    # =========================================================
+
+    def _calculate_metrics(
+        self,
+        total_distance,
+    ):
+
+        derby_penalty = 0
+
+        away_penalty = 0
+
+        for tid in self.team_ids:
+
+            if self.away_streak[tid] > 2:
+
+                away_penalty += (
+                    self.away_streak[tid]
+                    - 2
+                )
+
+        for (
+            round_num,
+            away,
+            home,
+            _,
+        ) in self.history:
+
+            pair = (
+                min(home, away),
+                max(home, away),
+            )
+
+            if (
+                pair
+                in self.derbies_bonus
+                and round_num
+                in self.blackout_rounds
+            ):
+
+                derby_penalty += 1
+
+        objective = (
+
+            total_distance
+
+            + derby_penalty * 5000
+
+            + away_penalty * 3000
+        )
+
+        return {
+
+            "travel_distance":
+                total_distance,
+
+            "away_penalty":
+                away_penalty,
+
+            "derby_penalty":
+                derby_penalty,
+
+            "rest_imbalance":
+                0,
+
+            "objective_score":
+                objective,
+        }
+
+    # =========================================================
+    # MAIN SOLVER
+    # =========================================================
 
     def solve(self):
-        """Greedy Round-by-Round construction (Cell 13)"""
-        history = set()
-        current_city = {tid: tid for tid in self.team_ids}
-        full_schedule = []
-        total_dist = 0
 
-        for r in range(1, self.num_rounds + 1):
-            available = self.team_ids.copy()
-            round_matches = []
-            
-            # Try to find matches for this round
-            while len(available) >= 2:
-                t1 = available.pop(0)
-                best_opponent = None
-                min_score = float('inf')
-                
-                for i, t2 in enumerate(available):
-                    if (t1, t2) not in history:
-                        # Cost = Travel Distance - Derby Bonus
-                        dist = self.dist_matrix.get((current_city[t1], t2), 500)
-                        bonus = self.derbies.get((t1, t2), 0)
-                        score = dist - bonus
-                        
-                        if score < min_score:
-                            min_score = score
-                            best_opponent = i
-                
-                if best_opponent is not None:
-                    t2 = available.pop(best_opponent)
-                    history.add((t1, t2))
-                    
-                    # Track travel
-                    total_dist += self.dist_matrix.get((current_city[t1], t1), 0) # Home travel
-                    total_dist += self.dist_matrix.get((current_city[t2], t1), 0) # T2 travels to T1
-                    current_city[t1] = t1
-                    current_city[t2] = t1 # T2 is now at T1's city
-                    
-                    round_matches.append({
-                        "round": r,
-                        "home_id": t1,
-                        "away_id": t2,
-                        "is_derby": (t1, t2) in self.derbies
-                    })
-                else:
-                    # If greedy fails to find a valid match, we reset and try again
-                    # (Simplified for this version)
+        start_time = time.time()
+
+        attempt = 0
+
+        while True:
+
+            attempt += 1
+
+            self.restart_count += 1
+
+            self.reset()
+
+            success = True
+
+            total_distance = 0
+
+            for r in range(
+                1,
+                self.num_rounds + 1,
+            ):
+
+                matches = (
+                    self._generate_round()
+                )
+
+                if (
+                    not matches
+                    or not self._validate_round(
+                        matches
+                    )
+                ):
+
+                    self.deadlock_count += 1
+
+                    success = False
+
                     break
-            
-            full_schedule.extend(round_matches)
 
-        return full_schedule, total_dist, 0
+                # =====================
+                # MATCH PROCESSING
+                # =====================
+
+                for a, b in matches:
+
+                    # Away streak logic
+                    if (
+                        self.away_streak[a]
+                        >= 2
+                    ):
+
+                        away = b
+                        home = a
+
+                    elif (
+                        self.away_streak[b]
+                        >= 2
+                    ):
+
+                        away = a
+                        home = b
+
+                    else:
+
+                        d_a = (
+                            self.dist_matrix[
+                                (
+                                    self.current_locations[a],
+                                    b,
+                                )
+                            ]
+                        )
+
+                        d_b = (
+                            self.dist_matrix[
+                                (
+                                    self.current_locations[b],
+                                    a,
+                                )
+                            ]
+                        )
+
+                        if d_a <= d_b:
+
+                            away = a
+                            home = b
+
+                        else:
+
+                            away = b
+                            home = a
+
+                    dist = (
+                        self.dist_matrix[
+                            (
+                                self.current_locations[
+                                    away
+                                ],
+                                home,
+                            )
+                        ]
+                    )
+
+                    total_distance += dist
+
+                    # =====================
+                    # UPDATE STATE
+                    # =====================
+
+                    self.history.append(
+
+                        (
+                            r,
+                            away,
+                            home,
+                            dist,
+                        )
+
+                    )
+
+                    pair = (
+                        min(away, home),
+                        max(away, home),
+                    )
+
+                    self.played[pair] += 1
+
+                    self.current_locations[
+                        away
+                    ] = home
+
+                    self.away_streak[
+                        away
+                    ] += 1
+
+                    self.away_streak[
+                        home
+                    ] = 0
+
+            if success:
+
+                break
+
+        execution_time = (
+            time.time() - start_time
+        )
+
+        metrics = (
+            self._calculate_metrics(
+                total_distance
+            )
+        )
+
+        formatted_schedule = (
+            self._format_schedule()
+        )
+
+        # =====================================================
+        # FINAL RESPONSE
+        # =====================================================
+
+        return {
+
+            "success": True,
+
+            "schedule":
+                formatted_schedule,
+
+            "metrics":
+                metrics,
+
+            "search_statistics": {
+
+                "execution_time_seconds":
+                    execution_time,
+
+                "restart_count":
+                    self.restart_count,
+
+                "deadlock_count":
+                    self.deadlock_count,
+
+                "explored_matchings":
+                    self.explored_matchings,
+            },
+
+            "constraint_report": {
+
+                "valid":
+                    len(
+                        self.constraint_violations
+                    )
+                    == 0,
+
+                "violations":
+                    self.constraint_violations,
+            },
+
+            "blackout_rounds":
+                list(
+                    self.blackout_rounds
+                ),
+        }
