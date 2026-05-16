@@ -92,7 +92,7 @@ def run_hc(
 
         hard_constraints_ok=result[
             "constraint_report"
-        ]["valid"],
+        ]["valid_after_optimization"],
 
         execution_time_sec=result[
             "metrics"

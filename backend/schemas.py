@@ -1,7 +1,8 @@
 # schemas.py
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+import ast
 
 
 # ---------- Base schemas (used for reading/writing) ----------
@@ -70,6 +71,41 @@ class SolverRun(SolverRunBase):
     start_time: datetime
     end_time: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
+
+    # FIX: schedule_repo.py stores blackout_rounds_used in the DB as a plain
+    #      Python repr string (e.g. "[1, 2, 34]") via str(blackout_rounds).
+    #      When SQLAlchemy reads it back, Pydantic receives a str but the field
+    #      type is Optional[List[int]], causing a ValidationError.
+    #      This validator intercepts the raw value before Pydantic validates it
+    #      and parses it back to a list when needed.
+    @field_validator("blackout_rounds_used", mode="before")
+    @classmethod
+    def parse_blackout_rounds(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # ast.literal_eval safely parses "[1, 2, 34]" → [1, 2, 34]
+            parsed = ast.literal_eval(v)
+            if isinstance(parsed, list):
+                return parsed
+        return v
+
+    # FIX: schedule_repo.py also stores parameters as str(parameters).
+    #      Same treatment: parse it back to a dict when it arrives as a string.
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def parse_parameters(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            parsed = ast.literal_eval(v)
+            if isinstance(parsed, dict):
+                return parsed
+        return v
 
 
 class ScheduleMatchBase(BaseModel):
