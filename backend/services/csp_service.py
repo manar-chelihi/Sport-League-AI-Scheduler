@@ -601,16 +601,89 @@ class CSPScheduler:
     # ============================================================
     # SCHEDULE FORMATTER
     # ============================================================
+        # ============================================================
+    # PLAY DAY ASSIGNMENT
+    # ============================================================
 
+    def assign_play_days(self, assignment):
+        """
+        Assign play days using a penalty-based approach (mirroring HC logic):
+        - Derby matches are *preferred* on weekends (Fri/Sat/Sun) via a soft
+          penalty, but are not forced there.
+        - Non-derby matches are distributed across all 7 weekdays to avoid
+          piling every match onto days 5/6/7.
+        - A distribution penalty discourages overloading any single day.
+        """
+
+        rounds = {}
+        for (home, away), round_num in assignment.items():
+            rounds.setdefault(round_num, []).append((home, away))
+
+        play_day_map = {}
+        last_played = {}  # team -> last absolute day played
+
+        for round_num in sorted(rounds.keys()):
+
+            matches = rounds[round_num]
+            matches_per_day = {day: 0 for day in range(1, 8)}
+
+            for home, away in matches:
+
+                is_derby = (
+                    (home, away) in self.derby_matches
+                    or (away, home) in self.derby_matches
+                )
+
+                best_day = None
+                best_penalty = float("inf")
+
+                for weekday in range(1, 8):
+                    absolute_day = ((round_num - 1) * 7) + weekday
+                    penalty = 0
+
+                    # Rest fairness: discourage < 2 days rest and
+                    # awkward Sunday->Monday transitions
+                    for team in [home, away]:
+                        if team in last_played:
+                            rest_gap = absolute_day - last_played[team]
+                            if rest_gap < 2:
+                                penalty += 5000
+                            previous_weekday = ((last_played[team] - 1) % 7) + 1
+                            if previous_weekday == 7 and weekday == 1:
+                                penalty += 3000
+
+                    # Soft derby weekend preference (Fri/Sat/Sun)
+                    if is_derby and weekday not in [5, 6, 7]:
+                        penalty += 4000
+
+                    # Distribution penalty: avoid piling matches on one day
+                    penalty += (matches_per_day[weekday] ** 2) * 500
+
+                    if penalty < best_penalty:
+                        best_penalty = penalty
+                        best_day = absolute_day
+
+                selected_weekday = ((best_day - 1) % 7) + 1
+                matches_per_day[selected_weekday] += 1
+
+                play_day_map[(home, away)] = {
+                    "play_day": best_day,
+                    "weekday": selected_weekday,
+                }
+
+                last_played[home] = best_day
+                last_played[away] = best_day
+
+        return play_day_map
+    
     def _format_results(
         self,
         assignment,
     ):
-        """
-        Transform assignment to API-friendly structure.
-        """
 
         formatted = []
+
+        play_days = self.assign_play_days(assignment)
 
         for (home, away), round_num in assignment.items():
 
@@ -619,8 +692,15 @@ class CSPScheduler:
                 0
             )
 
+            play_info = play_days.get(
+                (home, away),
+                {}
+            )
+
             formatted.append({
-                "round": int(round_num),
+
+                "round":
+                    int(round_num),
 
                 "home_id":
                     int(self.name_to_id[home]),
@@ -640,6 +720,12 @@ class CSPScheduler:
 
                 "distance_km":
                     float(distance),
+
+                "play_day":
+                    int(play_info.get("play_day", 0)),
+
+                "weekday":
+                    int(play_info.get("weekday", 1)),
             })
 
         formatted.sort(

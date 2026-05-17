@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>League Scheduler</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #273449;
+    --border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --primary: #38bdf8;
+    --primary-hover: #0ea5e9;
+    --accent: #f59e0b;
+    --derby: #ef4444;
+    --success: #22c55e;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  main {
+    padding: 24px 32px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    background: var(--surface);
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  label {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  select,
+  input[type="text"] {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
+  button {
+    background: var(--primary);
+    color: #0f172a;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+
+  button:hover {
+    background: var(--primary-hover);
+  }
+
+  button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .metric-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  .metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .status {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    display: none;
+  }
+
+  .status.show {
+    display: block;
+  }
+
+  .status.error {
+    background: rgba(239,68,68,.15);
+    border: 1px solid var(--derby);
+    color: #fecaca;
+  }
+
+  .status.info {
+    background: rgba(56,189,248,.1);
+    border: 1px solid var(--primary);
+    color: #bae6fd;
+  }
+
+  .calendar-week {
+    margin-bottom: 34px;
+  }
+
+  .week-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .week-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+  }
+
+  .week-title {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 14px;
+  }
+
+  .day-column {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    min-height: 220px;
+    overflow: hidden;
+  }
+
+  .day-header {
+    background: rgba(56,189,248,.12);
+    border-bottom: 1px solid var(--border);
+    padding: 10px;
+    text-align: center;
+  }
+
+  .day-name {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .day-number {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .day-matches {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .match-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    transition: .15s;
+  }
+
+  .match-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .match-card.derby {
+    border-color: var(--derby);
+    background: rgba(239,68,68,.10);
+  }
+
+  .match-teams {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .match-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .derby-badge {
+    background: var(--derby);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  .empty-day {
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    padding: 24px 0;
+  }
+
+  .loader {
+    text-align: center;
+    padding: 60px;
+    color: var(--muted);
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 1200px) {
+    .calendar-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 700px) {
+    .calendar-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ League Scheduler</h1>
+  <p>Generate and view sports league schedules from your FastAPI backend</p>
+</header>
+
+<main>
+  <div class="controls">
+    <label for="apiUrl">API:</label>
+    <input type="text" id="apiUrl" value="http://localhost:8000" style="min-width:220px"/>
+    <label for="solver">Solver:</label>
+    <select id="solver">
+      <option value="csp">CSP</option>
+      <option value="hc">Hill Climbing</option>
+      <option value="sa">Simulated Annealing</option>
+      <option value="greedy">Greedy</option>
+    </select>
+    <button id="generateBtn">Generate Schedule</button>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <div id="metrics" class="metrics" style="display:none"></div>
+
+  <div id="schedule"></div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+  const metricsEl = $("metrics");
+  const scheduleEl = $("schedule");
+  const btn = $("generateBtn");
+
+  function showStatus(msg, type = "info") {
+    statusEl.textContent = msg;
+    statusEl.className = `status show ${type}`;
+  }
+  function hideStatus() { statusEl.className = "status"; }
+
+  function renderMetrics(metrics, stats) {
+    metricsEl.innerHTML = "";
+    metricsEl.style.display = "grid";
+    const items = [
+      ["Total Travel", `${Math.round(metrics.total_travel_km || metrics.travel_distance || 0).toLocaleString()} km`],
+      ["Rest Imbalance", (metrics.rest_imbalance ?? "-").toString()],
+      ["Derby Conflicts", (metrics.derby_conflicts ?? metrics.blackout_violations ?? 0).toString()],
+      ["Execution Time", `${(stats?.execution_time_seconds ?? metrics.execution_time_seconds ?? 0).toFixed(2)}s`],
+    ];
+    for (const [label, value] of items) {
+      const card = document.createElement("div");
+      card.className = "metric-card";
+      card.innerHTML = `<div class="metric-label">${label}</div><div class="metric-value">${value}</div>`;
+      metricsEl.appendChild(card);
+    }
+  }
+
+
+  function renderSchedule(schedule) {
+
+    scheduleEl.innerHTML = "";
+
+    const weekdayNames = {
+      1: "Monday",
+      2: "Tuesday",
+      3: "Wednesday",
+      4: "Thursday",
+      5: "Friday",
+      6: "Saturday",
+      7: "Sunday",
+    };
+
+    const rounds = {};
+
+    for (const match of schedule) {
+
+      const round =
+        match.round_number ??
+        match.round;
+
+      if (!rounds[round]) {
+        rounds[round] = [];
+      }
+
+      rounds[round].push(match);
+    }
+
+    const sortedRounds =
+      Object.keys(rounds)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+    for (const round of sortedRounds) {
+
+      const weekContainer =
+        document.createElement("div");
+
+      weekContainer.className =
+        "calendar-week";
+
+      const days = {
+        1: [],
+        2: [],
+        3: [],
+        4: [],
+        5: [],
+        6: [],
+        7: [],
+      };
+
+      for (const match of rounds[round]) {
+
+        const weekday =
+          match.weekday ?? 1;
+
+        days[weekday].push(match);
+      }
+
+      weekContainer.innerHTML = `
+        <div class="week-header">
+          <div class="week-badge">
+            ${round}
+          </div>
+
+          <div class="week-title">
+            Week ${round}
+          </div>
+        </div>
+
+        <div class="calendar-grid"></div>
+      `;
+
+      const grid =
+        weekContainer.querySelector(
+          ".calendar-grid"
+        );
+
+      for (let day = 1; day <= 7; day++) {
+
+        const column =
+          document.createElement("div");
+
+        column.className =
+          "day-column";
+
+        const matchesHtml =
+          days[day]
+            .map((m) => {
+
+              const home =
+                m.home_name ||
+                m.home_team_name ||
+                `Team ${m.home_team_id}`;
+
+              const away =
+                m.away_name ||
+                m.away_team_name ||
+                `Team ${m.away_team_id}`;
+
+              const dist =
+                Math.round(
+                  m.distance_km ?? 0
+                );
+
+              return `
+                <div class="match-card ${m.is_derby ? "derby" : ""}">
+                  <div class="match-teams">
+                    ${home}
+                    <br/>
+                    vs
+                    <br/>
+                    ${away}
+                  </div>
+
+                  <div class="match-meta">
+                    <span>
+                      ${dist} km
+                    </span>
+
+                    ${
+                      m.is_derby
+                        ? `<span class="derby-badge">Derby</span>`
+                        : ``
+                    }
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+
+        column.innerHTML = `
+          <div class="day-header">
+            <div class="day-name">
+              ${weekdayNames[day]}
+            </div>
+
+            <div class="day-number">
+              Day ${day}
+            </div>
+          </div>
+
+          <div class="day-matches">
+            ${
+              matchesHtml ||
+              `<div class="empty-day">No Matches</div>`
+            }
+          </div>
+        `;
+
+        grid.appendChild(column);
+      }
+
+      scheduleEl.appendChild(
+        weekContainer
+      );
+    }
+  }
+  async function generate() {
+    const base = $("apiUrl").value.replace(/\/$/, "");
+    const solver = $("solver").value;
+    const url = `${base}/generate/${solver}/`;
+
+    btn.disabled = true;
+    metricsEl.style.display = "none";
+    scheduleEl.innerHTML = '<div class="loader"><div class="spinner"></div><p>Generating schedule…</p></div>';
+    showStatus(`Calling ${url}…`, "info");
+
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status} – ${await res.text()}`);
+      const data = await res.json();
+      hideStatus();
+      const schedule = data.schedule || data.matches || [];
+      const metrics = data.metrics || data.run_metrics || {};
+      const stats = data.search_statistics || data.search_stats || {};
+      renderMetrics(metrics, stats);
+      renderSchedule(schedule);
+      if (!schedule.length) showStatus("No matches returned.", "error");
+    } catch (err) {
+      scheduleEl.innerHTML = "";
+      showStatus(`Failed: ${err.message}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener("click", generate);
+</script>
+</body>
+</html>

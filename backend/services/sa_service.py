@@ -368,18 +368,12 @@ class SimulatedAnnealingScheduler:
         w4=3000.0,
     ):
 
-        slots = [5, 6, 7]
+        play_days_info = self.assign_play_days(schedule)
 
-        play_days = []
-
-        for r in range(len(schedule)):
-
-            play_days.append([
-                r * 7 + slots[m_idx % 3]
-                for m_idx in range(
-                    len(schedule[r])
-                )
-            ])
+        play_days = [
+            [entry["play_day"] for entry in round_days]
+            for round_days in play_days_info
+        ]
 
         travel = self._total_travel(
             schedule
@@ -481,13 +475,89 @@ class SimulatedAnnealingScheduler:
     # =========================================================
     # FORMAT RESULTS
     # =========================================================
+        # =========================================================
+    # PLAY DAY ASSIGNMENT
+    # =========================================================
 
+    def assign_play_days(
+        self,
+        schedule,
+    ):
+        """
+        Assign play days using a penalty-based approach (mirroring HC logic):
+        - Derby matches are *preferred* on weekends (Fri/Sat/Sun) via a soft
+          penalty, but are not forced there.
+        - Non-derby matches are distributed across all 7 weekdays to avoid
+          piling every match onto days 5/6/7.
+        - A distribution penalty discourages overloading any single day.
+        """
+
+        play_days = []
+        last_played = {}  # team_idx -> last absolute day played
+
+        for r_idx, round_matches in enumerate(schedule):
+
+            round_days = []
+            matches_per_day = {day: 0 for day in range(1, 8)}
+
+            for h_idx, a_idx in round_matches:
+
+                is_derby = (
+                    min(h_idx, a_idx),
+                    max(h_idx, a_idx),
+                ) in self.derby_pairs
+
+                best_day = None
+                best_penalty = float("inf")
+
+                for weekday in range(1, 8):
+                    absolute_day = r_idx * 7 + weekday
+                    penalty = 0
+
+                    # Rest fairness
+                    for team in [h_idx, a_idx]:
+                        if team in last_played:
+                            rest_gap = absolute_day - last_played[team]
+                            if rest_gap < 2:
+                                penalty += 5000
+                            previous_weekday = ((last_played[team] - 1) % 7) + 1
+                            if previous_weekday == 7 and weekday == 1:
+                                penalty += 3000
+
+                    # Soft derby weekend preference (Fri/Sat/Sun)
+                    if is_derby and weekday not in [5, 6, 7]:
+                        penalty += 4000
+
+                    # Distribution penalty
+                    penalty += (matches_per_day[weekday] ** 2) * 500
+
+                    if penalty < best_penalty:
+                        best_penalty = penalty
+                        best_day = absolute_day
+
+                selected_weekday = ((best_day - 1) % 7) + 1
+                matches_per_day[selected_weekday] += 1
+
+                round_days.append({
+                    "play_day": best_day,
+                    "weekday": selected_weekday,
+                })
+
+                last_played[h_idx] = best_day
+                last_played[a_idx] = best_day
+
+            play_days.append(round_days)
+
+        return play_days
+    
     def _format_schedule(
         self,
         schedule,
     ):
 
         formatted = []
+
+        play_days = self.assign_play_days(schedule)
 
         for r_idx, round_matches in enumerate(
             schedule
@@ -499,6 +569,8 @@ class SimulatedAnnealingScheduler:
 
                 h_name = self.team_names[h_idx]
                 a_name = self.team_names[a_idx]
+
+                play_info = play_days[r_idx][m_idx]
 
                 formatted.append({
 
@@ -536,6 +608,12 @@ class SimulatedAnnealingScheduler:
                                 h_idx
                             ][a_idx]
                         ),
+
+                    "play_day":
+                        int(play_info["play_day"]),
+
+                    "weekday":
+                        int(play_info["weekday"]),
                 })
 
         return formatted

@@ -267,6 +267,8 @@ class GreedyScheduler:
 
         self.history = []
 
+        self._last_played_day = {}
+
     # =========================================================
     # ROUND GENERATION
     # =========================================================
@@ -456,6 +458,8 @@ class GreedyScheduler:
             away,
             home,
             dist,
+            play_day,
+            weekday,
         ) in enumerate(
             self.history
         ):
@@ -489,6 +493,12 @@ class GreedyScheduler:
 
                 "distance_km":
                     float(dist),
+
+                "play_day":
+                    int(play_day),
+
+                "weekday":
+                    int(weekday),
             })
 
         return formatted
@@ -520,6 +530,8 @@ class GreedyScheduler:
             away,
             home,
             _,
+            play_day,
+            weekday,
         ) in self.history:
 
             pair = (
@@ -611,6 +623,9 @@ class GreedyScheduler:
                 # MATCH PROCESSING
                 # =====================
 
+                # Per-round day-distribution tracker
+                matches_per_day = {day: 0 for day in range(1, 8)}
+
                 for a, b in matches:
 
                     # Away streak logic
@@ -674,18 +689,66 @@ class GreedyScheduler:
                     total_distance += dist
 
                     # =====================
+                    # PLAY DAY ASSIGNMENT
+                    # Soft derby weekend preference
+                    # (mirrors HC logic)
+                    # =====================
+
+                    pair = (
+                        min(away, home),
+                        max(away, home),
+                    )
+
+                    is_derby = pair in self.derbies_bonus
+
+                    best_weekday = None
+                    best_penalty = float("inf")
+
+                    for wd in range(1, 8):
+                        absolute_day = ((r - 1) * 7) + wd
+                        penalty = 0
+
+                        # Rest fairness
+                        for team in [home, away]:
+                            if team in self._last_played_day:
+                                rest_gap = absolute_day - self._last_played_day[team]
+                                if rest_gap < 2:
+                                    penalty += 5000
+                                prev_wd = ((self._last_played_day[team] - 1) % 7) + 1
+                                if prev_wd == 7 and wd == 1:
+                                    penalty += 3000
+
+                        # Soft derby weekend preference (Fri/Sat/Sun)
+                        if is_derby and wd not in [5, 6, 7]:
+                            penalty += 4000
+
+                        # Distribution penalty
+                        penalty += (matches_per_day[wd] ** 2) * 500
+
+                        if penalty < best_penalty:
+                            best_penalty = penalty
+                            best_weekday = wd
+
+                    weekday = best_weekday
+                    play_day = ((r - 1) * 7) + weekday
+
+                    matches_per_day[weekday] += 1
+                    self._last_played_day[home] = play_day
+                    self._last_played_day[away] = play_day
+
+                    # =====================
                     # UPDATE STATE
                     # =====================
 
                     self.history.append(
-
                         (
                             r,
                             away,
                             home,
                             dist,
+                            play_day,
+                            weekday,
                         )
-
                     )
 
                     pair = (
