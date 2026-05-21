@@ -98,7 +98,27 @@ class HillClimbingScheduler:
                 self.num_rounds - 1,
             }
         else:
-            self.blackout_rounds = blackout_rounds
+            self.blackout_rounds = self._normalize_blackout_rounds(
+                blackout_rounds
+            )
+
+    def _normalize_blackout_rounds(
+        self,
+        rounds: Set[int],
+    ) -> Set[int]:
+        """
+        Normalize blackout round indices for internal 0-based schedule logic.
+        """
+
+        normalized = set(rounds)
+
+        if not normalized:
+            return normalized
+
+        if min(normalized) >= 1 and max(normalized) <= self.num_rounds:
+            return {r - 1 for r in normalized}
+
+        return normalized
 
     # =====================================================================
     # DISTANCE UTILITIES
@@ -193,6 +213,7 @@ class HillClimbingScheduler:
         rounds_per_half = n - 1
 
         teams = list(range(n))
+        random.shuffle(teams)
 
         fixed = teams[0]
         rotating = teams[1:]
@@ -735,6 +756,10 @@ class HillClimbingScheduler:
 
         execution_time = time.time() - start_time
 
+        derby_conflicts = int(
+            self.derby_penalty(optimized_schedule)
+        )
+
         metrics = {
             "total_travel_km": float(
                 self.total_travel(optimized_schedule)
@@ -748,9 +773,9 @@ class HillClimbingScheduler:
             "away_break_violations": int(
                 self.count_away_breaks(optimized_schedule)
             ),
-            "derby_blackout_violations": int(
-                self.derby_penalty(optimized_schedule)
-            ),
+            "derby_blackout_violations": derby_conflicts,
+            "derby_penalty": derby_conflicts,
+            "derby_conflicts": derby_conflicts,
             "objective_cost": float(final_cost),
             "execution_time_seconds": execution_time,
             "iterations_recorded": len(cost_history),

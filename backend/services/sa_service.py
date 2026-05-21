@@ -161,6 +161,7 @@ class SimulatedAnnealingScheduler:
         rounds_per_half = self.n - 1
 
         teams_idx = list(range(self.n))
+        random.shuffle(teams_idx)
 
         schedule = []
 
