@@ -176,9 +176,18 @@ class CostHistory(CostHistoryBase):
 
 # ---------- Composite response schemas (for API convenience) ----------
 
+class ConstraintReport(BaseModel):
+    valid_before_optimization: Optional[bool] = None
+    valid_after_optimization: Optional[bool] = None
+    valid_before: Optional[bool] = None
+    valid_after: Optional[bool] = None
+    violations: Optional[List[str]] = None
+
+
 class FullSolverResult(BaseModel):
     run: SolverRun
     matches: List[ScheduleMatch]
     metrics: Optional[RunMetric] = None
     search_stats: Optional[SearchStat] = None
     cost_history: List[CostHistory] = []
+    constraint_report: Optional[ConstraintReport] = None

@@ -843,24 +843,21 @@ class CSPScheduler:
             "metrics": metrics,
 
             "constraint_report": {
-                "valid":
-                    len(violations) == 0,
-
-                "violations":
-                    violations,
+                "valid": len(violations) == 0,
+                "valid_before_optimization": len(violations) == 0,
+                "valid_after_optimization": len(violations) == 0,
+                "valid_before": len(violations) == 0,
+                "valid_after": len(violations) == 0,
+                "violations": violations,
             },
 
             "search_statistics": {
-                "backtrack_calls":
-                    self.backtrack_calls,
+                "backtrack_calls": self.backtrack_calls,
 
-                "constraint_checks":
-                    self.constraint_checks,
+                "constraint_checks": self.constraint_checks,
 
-                "forward_check_failures":
-                    self.forward_check_failures,
+                "forward_check_failures": self.forward_check_failures,
 
-                "execution_time_seconds":
-                    execution_time,
+                "execution_time_seconds": execution_time,
             },
         }

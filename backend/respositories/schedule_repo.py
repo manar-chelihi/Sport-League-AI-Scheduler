@@ -199,7 +199,8 @@ class ScheduleRepository:
     @staticmethod
     def get_full_result(
         db: Session,
-        run_id: int
+        run_id: int,
+        constraint_report: dict = None,
     ) -> schemas.FullSolverResult:
 
         run = db.query(
@@ -243,4 +244,5 @@ class ScheduleRepository:
             metrics=metrics,
             search_stats=search_stats,
             cost_history=cost_history,
+            constraint_report=constraint_report,
         )

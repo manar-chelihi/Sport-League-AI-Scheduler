@@ -105,5 +105,8 @@ def run_greedy(
     # RETURN FULL RESULT
     # =====================================================
 
-   
-    return ScheduleRepository.get_full_result(db, db_run.run_id)
+    return ScheduleRepository.get_full_result(
+        db,
+        db_run.run_id,
+        constraint_report=result.get("constraint_report"),
+    )

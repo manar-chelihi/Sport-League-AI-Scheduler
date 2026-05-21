@@ -372,18 +372,30 @@
       stats.execution_time_seconds ??
       null;
 
+    const constraintReport =
+      data?.constraint_report ??
+      metrics.constraint_report ??
+      stats.constraint_report ??
+      {};
+
+    const violations =
+      constraintReport.violations ??
+      metrics.violations ??
+      [];
+
     const execTime = formatDuration(execTimeValue);
 
     const items = [
       ["Total Travel", `${Math.round(metrics.total_travel_km || metrics.travel_distance || 0).toLocaleString()} km`],
       ["Rest Imbalance", (metrics.rest_imbalance ?? "-").toString()],
-      ["Derby Conflicts", (
+      ["Derby Blackout Violations", (
         metrics.derby_blackout_violations ??
         metrics.derby_penalty ??
         metrics.derby_conflicts ??
         metrics.blackout_violations ??
         0
       ).toString()],
+      ["Violations", Array.isArray(violations) ? violations.length.toString() : (violations ? violations.toString() : "0")],
       ["Execution Time", execTime],
     ];
     for (const [label, value] of items) {
@@ -391,6 +403,18 @@
       card.className = "metric-card";
       card.innerHTML = `<div class="metric-label">${label}</div><div class="metric-value">${value}</div>`;
       metricsEl.appendChild(card);
+    }
+
+    if (Array.isArray(violations) && violations.length > 0) {
+      const violationsCard = document.createElement("div");
+      violationsCard.className = "metric-card";
+      violationsCard.innerHTML = `
+        <div class="metric-label">Violation Details</div>
+        <div class="metric-value" style="font-size:14px;font-weight:400;line-height:1.5;">${violations
+          .map((item) => `<div>${item}</div>`)
+          .join("")}</div>
+      `;
+      metricsEl.appendChild(violationsCard);
     }
   }
 

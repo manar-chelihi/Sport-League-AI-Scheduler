@@ -810,6 +810,10 @@ class SimulatedAnnealingScheduler:
 
             "constraint_report": {
                 "valid": True,
+                "valid_before_optimization": True,
+                "valid_after_optimization": True,
+                "valid_before": True,
+                "valid_after": True,
                 "violations": [],
             },
 

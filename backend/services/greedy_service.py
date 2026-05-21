@@ -856,6 +856,26 @@ class GreedyScheduler:
                         self.constraint_violations
                     )
                     == 0,
+                "valid_before_optimization":
+                    len(
+                        self.constraint_violations
+                    )
+                    == 0,
+                "valid_after_optimization":
+                    len(
+                        self.constraint_violations
+                    )
+                    == 0,
+                "valid_before":
+                    len(
+                        self.constraint_violations
+                    )
+                    == 0,
+                "valid_after":
+                    len(
+                        self.constraint_violations
+                    )
+                    == 0,
 
                 "violations":
                     self.constraint_violations,
