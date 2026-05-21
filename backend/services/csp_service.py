@@ -32,6 +32,8 @@ class CSPScheduler:
     - Search statistics
     """
 
+    MAX_TEAMS = 14
+
     def __init__(
         self,
         teams_df: pd.DataFrame,
@@ -42,6 +44,21 @@ class CSPScheduler:
         self.teams_df = teams_df.copy()
         self.distances_df = distances_df.copy()
         self.derbies_df = derbies_df.copy()
+
+        # Limit solver size to keep CSP runtime reasonable.
+        if len(self.teams_df) > self.MAX_TEAMS:
+            selected_teams = self.teams_df.iloc[: self.MAX_TEAMS].copy()
+            selected_ids = set(selected_teams["team_id"])
+
+            self.teams_df = selected_teams
+            self.distances_df = self.distances_df[
+                self.distances_df["team1_id"].isin(selected_ids)
+                & self.distances_df["team2_id"].isin(selected_ids)
+            ].copy()
+            self.derbies_df = self.derbies_df[
+                self.derbies_df["team1_id"].isin(selected_ids)
+                & self.derbies_df["team2_id"].isin(selected_ids)
+            ].copy()
 
         # Teams
         self.teams_list = list(self.teams_df["team_name"])
@@ -524,7 +541,7 @@ class CSPScheduler:
         assignment,
     ):
         """
-        Rest fairness metric.
+        Rest fairness metric based on actual assigned play days.
         """
 
         matches_by_round = {}
@@ -535,6 +552,8 @@ class CSPScheduler:
                 []
             ).append(match)
 
+        play_days = self.assign_play_days(assignment)
+
         last_played = {
             t: 0 for t in self.teams_list
         }
@@ -544,16 +563,25 @@ class CSPScheduler:
         for r in sorted(matches_by_round.keys()):
 
             for home, away in matches_by_round[r]:
+                play_day = play_days[(home, away)]["play_day"]
 
-                home_rest = r - last_played[home]
-                away_rest = r - last_played[away]
+                home_rest = (
+                    play_day - last_played[home]
+                    if last_played[home] != 0
+                    else play_day
+                )
+                away_rest = (
+                    play_day - last_played[away]
+                    if last_played[away] != 0
+                    else play_day
+                )
 
                 imbalance += abs(
                     home_rest - away_rest
                 )
 
-                last_played[home] = r
-                last_played[away] = r
+                last_played[home] = play_day
+                last_played[away] = play_day
 
         return imbalance
 

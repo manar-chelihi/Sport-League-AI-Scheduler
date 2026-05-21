@@ -6,17 +6,17 @@
 <title>League Scheduler</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --surface-2: #273449;
-    --border: #334155;
-    --text: #f1f5f9;
-    --muted: #94a3b8;
+    --bg: #eef8ff;
+    --surface: #ffffff;
+    --surface-2: #dbeeff;
+    --border: #a7d8ff;
+    --text: #102a43;
+    --muted: #6b8ea7;
     --primary: #38bdf8;
     --primary-hover: #0ea5e9;
-    --accent: #f59e0b;
-    --derby: #ef4444;
-    --success: #22c55e;
+    --accent: #60a5fa;
+    --derby: #0284c7;
+    --success: #2dd4bf;
   }
 
   * { box-sizing: border-box; }
@@ -30,7 +30,7 @@
   }
 
   header {
-    background: linear-gradient(135deg, #0f172a, #1e293b);
+    background: linear-gradient(135deg, #a7d8ff, #1e293b);
     padding: 24px 32px;
     border-bottom: 1px solid var(--border);
   }
@@ -377,7 +377,13 @@
     const items = [
       ["Total Travel", `${Math.round(metrics.total_travel_km || metrics.travel_distance || 0).toLocaleString()} km`],
       ["Rest Imbalance", (metrics.rest_imbalance ?? "-").toString()],
-      ["Derby Conflicts", (metrics.derby_conflicts ?? metrics.blackout_violations ?? 0).toString()],
+      ["Derby Conflicts", (
+        metrics.derby_blackout_violations ??
+        metrics.derby_penalty ??
+        metrics.derby_conflicts ??
+        metrics.blackout_violations ??
+        0
+      ).toString()],
       ["Execution Time", execTime],
     ];
     for (const [label, value] of items) {

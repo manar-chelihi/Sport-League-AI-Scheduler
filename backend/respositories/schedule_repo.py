@@ -87,7 +87,8 @@ class ScheduleRepository:
 
             total_travel_km=metrics.get(
                 "total_travel_km",
-                metrics.get("travel_distance")
+                metrics.get("travel_distance_km",
+                            metrics.get("travel_distance"))
             ),
 
             rest_imbalance=metrics.get(
