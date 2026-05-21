@@ -765,6 +765,7 @@ class HillClimbingScheduler:
 
         return {
             "schedule": formatted_results,
+            "execution_time_sec": execution_time,
             "metrics": metrics,
             "constraint_report": constraint_report,
             "cost_history": cost_history,

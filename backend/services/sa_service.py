@@ -762,6 +762,9 @@ class SimulatedAnnealingScheduler:
 
             "success": True,
 
+            "execution_time_sec":
+                execution_time,
+
             "schedule":
                 formatted_schedule,
 

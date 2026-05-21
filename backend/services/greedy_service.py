@@ -507,6 +507,33 @@ class GreedyScheduler:
     # METRICS
     # =========================================================
 
+    def _calculate_rest_imbalance(self):
+
+        last_played = {
+            tid: 0 for tid in self.team_ids
+        }
+
+        imbalance = 0
+
+        for (
+            round_num,
+            away,
+            home,
+            _,
+            play_day,
+            weekday,
+        ) in self.history:
+
+            home_rest = play_day - last_played[home]
+            away_rest = play_day - last_played[away]
+
+            imbalance += abs(home_rest - away_rest)
+
+            last_played[home] = play_day
+            last_played[away] = play_day
+
+        return float(imbalance)
+
     def _calculate_metrics(
         self,
         total_distance,
@@ -548,6 +575,8 @@ class GreedyScheduler:
 
                 derby_penalty += 1
 
+        rest_imbalance = self._calculate_rest_imbalance()
+
         objective = (
 
             total_distance
@@ -569,7 +598,7 @@ class GreedyScheduler:
                 derby_penalty,
 
             "rest_imbalance":
-                0,
+                rest_imbalance,
 
             "objective_score":
                 objective,
@@ -795,6 +824,9 @@ class GreedyScheduler:
         return {
 
             "success": True,
+
+            "execution_time_sec":
+                execution_time,
 
             "schedule":
                 formatted_schedule,

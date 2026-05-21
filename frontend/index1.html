@@ -340,14 +340,45 @@
   }
   function hideStatus() { statusEl.className = "status"; }
 
-  function renderMetrics(metrics, stats) {
+  function formatDuration(seconds) {
+    if (seconds === null || seconds === undefined || Number.isNaN(seconds)) {
+      return "-";
+    }
+    const ms = seconds * 1000;
+    if (ms < 1) {
+      return `${ms.toFixed(2)} ms`;
+    }
+    if (seconds < 1) {
+      return `${ms.toFixed(0)} ms`;
+    }
+    if (seconds < 60) {
+      return `${seconds.toFixed(3).replace(/\.0+$/, "")} s`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds - mins * 60;
+    return `${mins}m ${secs.toFixed(2).replace(/\.0+$/, "")}s`;
+  }
+
+  function renderMetrics(metrics, stats, data) {
     metricsEl.innerHTML = "";
     metricsEl.style.display = "grid";
+    
+    const execTimeValue =
+      data?.run?.execution_time_sec ??
+      data?.execution_time_sec ??
+      metrics.execution_time_sec ??
+      metrics.execution_time_seconds ??
+      stats.execution_time_sec ??
+      stats.execution_time_seconds ??
+      null;
+
+    const execTime = formatDuration(execTimeValue);
+
     const items = [
       ["Total Travel", `${Math.round(metrics.total_travel_km || metrics.travel_distance || 0).toLocaleString()} km`],
       ["Rest Imbalance", (metrics.rest_imbalance ?? "-").toString()],
       ["Derby Conflicts", (metrics.derby_conflicts ?? metrics.blackout_violations ?? 0).toString()],
-      ["Execution Time", `${(stats?.execution_time_seconds ?? metrics.execution_time_seconds ?? 0).toFixed(2)}s`],
+      ["Execution Time", execTime],
     ];
     for (const [label, value] of items) {
       const card = document.createElement("div");
@@ -535,7 +566,7 @@
       const schedule = data.schedule || data.matches || [];
       const metrics = data.metrics || data.run_metrics || {};
       const stats = data.search_statistics || data.search_stats || {};
-      renderMetrics(metrics, stats);
+      renderMetrics(metrics, stats, data);
       renderSchedule(schedule);
       if (!schedule.length) showStatus("No matches returned.", "error");
     } catch (err) {

@@ -808,6 +808,8 @@ class CSPScheduler:
         return {
             "success": True,
 
+            "execution_time_sec": execution_time,
+
             "schedule": formatted_results,
 
             "metrics": metrics,
