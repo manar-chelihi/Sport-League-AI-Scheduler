@@ -1,6 +1,7 @@
 # services/csp_service.py
 
 import copy
+import math
 import sys
 import time
 from itertools import combinations
@@ -87,6 +88,14 @@ class CSPScheduler:
             )
         )
 
+        self.team_coords = {
+            row["team_name"]: (
+                row["latitude"],
+                row["longitude"],
+            )
+            for _, row in self.teams_df.iterrows()
+        }
+
         # Distances
         self.dist_lookup = self._build_distance_lookup()
 
@@ -110,6 +119,21 @@ class CSPScheduler:
         self.backtrack_calls = 0
         self.constraint_checks = 0
         self.forward_check_failures = 0
+
+    @staticmethod
+    def haversine(coord1, coord2):
+        R = 6371
+        lat1, lon1 = math.radians(coord1[0]), math.radians(coord1[1])
+        lat2, lon2 = math.radians(coord2[0]), math.radians(coord2[1])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(lat1)
+            * math.cos(lat2)
+            * math.sin(dlon / 2) ** 2
+        )
+        return 2 * R * math.asin(math.sqrt(a))
 
     # ============================================================
     # DISTANCE LOOKUP
@@ -139,6 +163,14 @@ class CSPScheduler:
 
             lookup[(t1, t2)] = d
             lookup[(t2, t1)] = d
+
+        for home, away in combinations(self.teams_list, 2):
+            if (home, away) not in lookup:
+                coord1 = self.team_coords[home]
+                coord2 = self.team_coords[away]
+                d = self.haversine(coord1, coord2)
+                lookup[(home, away)] = d
+                lookup[(away, home)] = d
 
         return lookup
 

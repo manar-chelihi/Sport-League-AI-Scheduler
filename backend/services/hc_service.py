@@ -82,6 +82,14 @@ class HillClimbingScheduler:
             idx: name for idx, name in enumerate(self.team_names)
         }
 
+        self.team_coords = {
+            self.name_to_idx[row["team_name"]]: (
+                row["latitude"],
+                row["longitude"],
+            )
+            for _, row in self.teams_df.iterrows()
+        }
+
         # Distances
         self.dist_matrix = self._build_distance_matrix()
 
@@ -162,6 +170,18 @@ class HillClimbingScheduler:
 
                 matrix[i][j] = row["distance_km"]
                 matrix[j][i] = row["distance_km"]
+
+        for i in range(self.n):
+            for j in range(self.n):
+                if i == j:
+                    continue
+                if matrix[i][j] == 0:
+                    coord1 = self.team_coords[i]
+                    coord2 = self.team_coords[j]
+                    matrix[i][j] = matrix[j][i] = self.haversine(
+                        coord1,
+                        coord2,
+                    )
 
         return matrix
 
@@ -430,6 +450,21 @@ class HillClimbingScheduler:
                 total += self.dist_matrix[current_location][team]
 
         return total
+
+    @staticmethod
+    def haversine(loc1: tuple, loc2: tuple) -> float:
+        R = 6371
+        lat1, lon1 = math.radians(loc1[0]), math.radians(loc1[1])
+        lat2, lon2 = math.radians(loc2[0]), math.radians(loc2[1])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(lat1)
+            * math.cos(lat2)
+            * math.sin(dlon / 2) ** 2
+        )
+        return 2 * R * math.asin(math.sqrt(a))
 
     def rest_imbalance(self, schedule, play_days) -> float:
         last_played = {

@@ -269,6 +269,8 @@ class GreedyScheduler:
 
         self._last_played_day = {}
 
+        self.last_round_pairs = set()
+
     # =========================================================
     # ROUND GENERATION
     # =========================================================
@@ -296,6 +298,10 @@ class GreedyScheduler:
             # =====================
 
             if self.played[pair] >= 2:
+                continue
+
+            # Prevent immediate rematches from the previous round.
+            if pair in self.last_round_pairs:
                 continue
 
             # =====================
@@ -654,6 +660,7 @@ class GreedyScheduler:
 
                 # Per-round day-distribution tracker
                 matches_per_day = {day: 0 for day in range(1, 8)}
+                round_pairs = set()
 
                 for a, b in matches:
 
@@ -791,6 +798,10 @@ class GreedyScheduler:
                         away
                     ] = home
 
+                    self.current_locations[
+                        home
+                    ] = home
+
                     self.away_streak[
                         away
                     ] += 1
@@ -798,6 +809,10 @@ class GreedyScheduler:
                     self.away_streak[
                         home
                     ] = 0
+
+                    round_pairs.add(pair)
+
+                self.last_round_pairs = round_pairs
 
             if success:
 
