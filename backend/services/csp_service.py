@@ -568,6 +568,25 @@ class CSPScheduler:
 
         return penalty
 
+    def _count_derby_blackout_violations(
+        self,
+        assignment,
+    ):
+        """
+        Count derby matches assigned in blackout rounds.
+        """
+
+        count = 0
+
+        for match, assigned_round in assignment.items():
+            if assigned_round in self.blackout_rounds:
+                home, away = match
+
+                if (home, away) in self.derby_matches:
+                    count += 1
+
+        return count
+
     def _calculate_rest_imbalance(
         self,
         assignment,
@@ -637,6 +656,12 @@ class CSPScheduler:
             assignment
         )
 
+        derby_blackout_violations = (
+            self._count_derby_blackout_violations(
+                assignment
+            )
+        )
+
         rest_imbalance = (
             self._calculate_rest_imbalance(
                 assignment
@@ -654,6 +679,7 @@ class CSPScheduler:
             "travel_distance_km": travel,
             "away_penalty_violations": away_penalty,
             "derby_penalty": derby_penalty,
+            "derby_blackout_violations": derby_blackout_violations,
             "rest_imbalance": rest_imbalance,
             "objective_score": objective,
         }
